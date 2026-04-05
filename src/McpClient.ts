@@ -141,6 +141,8 @@ export class McpClient {
   private httpEndpoint?: string;
   private postEndpoint?: string;
   private transport: 'stdio' | 'streamableHttp' | 'sse' = 'stdio';
+  private writeQueue: { params: any; resolve: Function; reject: Function }[] = [];
+  private isProcessingQueue: boolean = false;
 
   constructor(
     private config: McpClientConfig,
@@ -429,7 +431,38 @@ export class McpClient {
 
   public async callTool(params: { name: string; arguments: any }, schema: any): Promise<any> {
     new Validator().validate(params.arguments, schema, { throwError: true });
+
+    // Serialize write operations to prevent SQLite database locks
+    if (params.name === 'create_memory' || params.name === 'update_memory' || params.name === 'delete_memory') {
+      return new Promise((resolve, reject) => {
+        this.writeQueue.push({ params, resolve, reject });
+        this.processWriteQueue();
+      });
+    }
+
     return this.sendRequest('tools/call', params);
+  }
+
+  private async processWriteQueue() {
+    if (this.isProcessingQueue || this.writeQueue.length === 0) return;
+    this.isProcessingQueue = true;
+
+    while (this.writeQueue.length > 0) {
+      const task = this.writeQueue.shift();
+      if (!task) continue;
+
+      try {
+        const result = await this.sendRequest('tools/call', task.params);
+        task.resolve(result);
+      } catch (error) {
+        task.reject(error);
+      }
+
+      // Mandatory wait to allow SQLite to finish disk operations and release locks
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    this.isProcessingQueue = false;
   }
 
   private async sendRequest(method: string, params: any, progressToken?: ProgressToken): Promise<any> {

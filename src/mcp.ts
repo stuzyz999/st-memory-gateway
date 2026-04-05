@@ -294,10 +294,10 @@ export async function mcpInit(router: Router): Promise<void> {
       settings.mcpServers[name] = config;
       writeMcpSettings(request.user.directories, settings);
 
-      response.json({});
+      return response.json({});
     } catch (error: any) {
       console.error('[MCP] Error adding/updating server:', error);
-      response.status(500).json({ error: error?.message || 'Failed to add/update MCP server' });
+      return response.status(500).json({ error: error?.message || 'Failed to add/update MCP server' });
     }
   });
 
