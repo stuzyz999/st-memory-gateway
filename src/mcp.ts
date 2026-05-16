@@ -355,11 +355,20 @@ export async function mcpInit(router: Router): Promise<void> {
   });
 
   // Start an MCP server
+  // Supports optional inline config (for programmatic clients that skip pre-registration)
   // @ts-ignore
   router.post('/servers/:name/start', async (request: Request, response: Response) => {
     try {
       const { name } = request.params;
+      const inlineConfig = request.body?.config;
       const settings = readMcpSettings(request.user.directories);
+
+      // Accept inline config: save directly and start, no pre-registration needed
+      if (inlineConfig) {
+        if (!settings.mcpServers) settings.mcpServers = {};
+        settings.mcpServers[name] = inlineConfig;
+        writeMcpSettings(request.user.directories, settings);
+      }
 
       if (!settings.mcpServers || !settings.mcpServers[name]) {
         return response.status(404).json({ error: 'Server not found' });
